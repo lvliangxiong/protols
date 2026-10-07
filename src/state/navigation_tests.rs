@@ -202,3 +202,72 @@ fn references_honor_include_declaration_without_dropping_uses() {
     assert_eq!(state.references_for_fqn(fqn, true).len(), 3);
     assert!(state.references_for_fqn("missing.Type", true).is_empty());
 }
+
+#[test]
+fn references_distinguish_matching_names_across_scopes() {
+    let target = Url::parse("file:///navigation/target.proto").unwrap();
+    let other = Url::parse("file:///navigation/other.proto").unwrap();
+    let target_source = r#"syntax = "proto3";
+package example.target;
+message Header {}
+message Request {
+  Header local_header = 1;
+  .example.other.Header other_header = 2;
+  string unrelated = 3;
+}
+"#;
+    let other_source = r#"syntax = "proto3";
+package example.other;
+message Header {}
+message Request {
+  Header local_header = 1;
+  .example.target.Header target_header = 2;
+  repeated example.target.Header target_headers = 3;
+  message Nested {
+    message Header {}
+    Header nested_header = 1;
+  }
+}
+"#;
+    let mut state = ProtoLanguageState::new();
+    for (uri, content) in [(&target, target_source), (&other, other_source)] {
+        state.upsert_file(uri, content, &[], 1, &Config::default(), false);
+    }
+    let references = state.references_for_fqn("example.target.Header", false);
+    assert_eq!(references.len(), 3);
+    for (uri, source, token) in [
+        (&target, target_source, "Header local_header"),
+        (&other, other_source, ".example.target.Header"),
+        (&other, other_source, "repeated example.target.Header"),
+    ] {
+        let mut range = range_of(source, token);
+        if token.starts_with("repeated ") {
+            range.start.character += 9;
+        } else if token == "Header local_header" {
+            range.end.character = range.start.character + 6;
+        }
+        assert!(
+            references
+                .iter()
+                .any(|loc| loc.uri == *uri && loc.range == range)
+        );
+    }
+    assert_eq!(
+        state
+            .references_for_fqn("example.target.Header", true)
+            .len(),
+        4
+    );
+    assert_eq!(
+        state
+            .references_for_fqn("example.other.Header", false)
+            .len(),
+        2
+    );
+    assert_eq!(
+        state
+            .references_for_fqn("example.other.Request.Nested.Header", false)
+            .len(),
+        1
+    );
+}

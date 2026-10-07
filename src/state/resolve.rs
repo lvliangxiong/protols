@@ -54,7 +54,8 @@ impl ProtoLanguageState {
     /// Finds every element whose Fully Qualified Name equals `fqn`.
     pub(super) fn lookup_fqn(&self, fqn: &str) -> Vec<ResolvedTarget> {
         let mut out = Vec::new();
-        for document in self.get_documents() {
+        let documents = self.documents.read().expect("poison");
+        for document in documents.values() {
             for element in &document.elements {
                 if element.kind.fqn() == Some(fqn) {
                     out.push(ResolvedTarget {
@@ -72,7 +73,8 @@ impl ProtoLanguageState {
     fn lookup_fqn_suffix(&self, name: &str) -> Vec<ResolvedTarget> {
         let boundary = format!(".{name}");
         let mut out = Vec::new();
-        for document in self.get_documents() {
+        let documents = self.documents.read().expect("poison");
+        for document in documents.values() {
             for element in &document.elements {
                 if let Some(fqn) = element.kind.fqn()
                     && (fqn == name || fqn.ends_with(&boundary))
@@ -147,6 +149,7 @@ impl ProtoLanguageState {
     /// with declarations included only when requested by the client.
     pub fn references_for_fqn(&self, target_fqn: &str, include_declaration: bool) -> Vec<Location> {
         let mut refs = Vec::new();
+        let target_name = trailing_segment(target_fqn);
         for document in self.get_documents() {
             for element in &document.elements {
                 if include_declaration && element.kind.fqn() == Some(target_fqn) {
@@ -157,6 +160,13 @@ impl ProtoLanguageState {
                 }
                 let scope = element.kind.fqn().unwrap_or(&document.package);
                 for type_ref in element.kind.type_references() {
+                    // A reference can only resolve to a declaration with the
+                    // same final name. Avoid workspace-wide name resolution for
+                    // unrelated types (including scalar fields), while still
+                    // resolving candidates to distinguish scopes and packages.
+                    if trailing_segment(&type_ref.name) != target_name {
+                        continue;
+                    }
                     if self
                         .resolve_reference(scope, &type_ref.name)
                         .iter()

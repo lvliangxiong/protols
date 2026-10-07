@@ -1,9 +1,9 @@
 mod definition;
 mod hover;
-#[cfg(test)]
-mod navigation_tests;
 mod rename;
 mod resolve;
+#[cfg(test)]
+mod test_helpers;
 mod workspace_symbol;
 
 use std::{
@@ -532,10 +532,9 @@ mod test {
     #[test]
     fn test_document_completion_empty_for_missing_document() {
         let state = setup_state();
-        assert!(
-            state
-                .completion_items_for_document(&uri("file:///missing.proto"))
-                .is_empty()
+        assert_eq!(
+            state.completion_items_for_document(&uri("file:///missing.proto")),
+            vec![]
         );
     }
 
@@ -559,7 +558,7 @@ mod test {
     fn test_package_completion_items_empty_package() {
         let state = setup_state();
         let items = state.completion_items_for_package("com.nonexistent");
-        assert!(items.is_empty());
+        assert_eq!(items, vec![]);
     }
 
     #[test]
@@ -595,7 +594,7 @@ mod test {
     fn test_find_workspace_symbols_no_match() {
         let state = setup_state();
         let symbols = state.find_workspace_symbols("zzzzz");
-        assert!(symbols.is_empty());
+        assert_eq!(symbols, vec![]);
     }
 
     #[test]
@@ -654,7 +653,7 @@ mod test {
             &ipath,
             1,
         );
-        assert!(unresolved.is_empty());
+        assert_eq!(unresolved, Vec::<String>::new());
         assert!(state.get_document(&uri("file:///main.proto")).is_some());
     }
 
@@ -738,7 +737,7 @@ mod test {
         let params = result.unwrap();
         assert_eq!(params.uri.as_str(), "file:///test.proto");
         // Should have no diagnostics for valid proto
-        assert!(params.diagnostics.is_empty());
+        assert_eq!(params.diagnostics, vec![]);
     }
 
     #[test]

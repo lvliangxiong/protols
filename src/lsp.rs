@@ -564,10 +564,9 @@ impl ProtoLanguageServer {
         if self.shutdown_received {
             info!("Received exit notification after shutdown, exiting with code 0");
             std::process::exit(0);
-        } else {
-            warn!("Received exit notification without shutdown, exiting with code 1");
-            std::process::exit(1);
         }
+        warn!("Received exit notification without shutdown, exiting with code 1");
+        std::process::exit(1);
     }
 }
 

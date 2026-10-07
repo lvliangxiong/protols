@@ -52,7 +52,7 @@ impl ProtoLanguageState {
     }
 
     /// Finds every element whose Fully Qualified Name equals `fqn`.
-    fn lookup_fqn(&self, fqn: &str) -> Vec<ResolvedTarget> {
+    pub(super) fn lookup_fqn(&self, fqn: &str) -> Vec<ResolvedTarget> {
         let mut out = Vec::new();
         for document in self.get_documents() {
             for element in &document.elements {
@@ -124,23 +124,6 @@ impl ProtoLanguageState {
         None
     }
 
-    /// Returns the declaration location(s) of every element matching
-    /// `target_fqn` in the indexed workspace.
-    pub fn declarations_for_fqn(&self, target_fqn: &str) -> Vec<Location> {
-        let mut out = Vec::new();
-        for document in self.get_documents() {
-            for element in &document.elements {
-                if element.kind.fqn() == Some(target_fqn) {
-                    out.push(Location {
-                        uri: document.uri.clone(),
-                        range: element.meta.selection_range,
-                    });
-                }
-            }
-        }
-        out
-    }
-
     /// Resolves an identifier (possibly package-qualified) against `scope` and
     /// returns the declaration locations of its target.
     pub fn resolve_identifier_locations(&self, scope: &str, identifier: &str) -> Vec<Location> {
@@ -160,13 +143,13 @@ impl ProtoLanguageState {
     }
 
     /// Collects every reference site for a symbol identified by its FQN across
-    /// the indexed workspace: all matching declarations plus every type
-    /// reference that resolves back to the same FQN.
-    pub fn references_for_fqn(&self, target_fqn: &str) -> Vec<Location> {
+    /// the indexed workspace: every type reference resolving to the same FQN,
+    /// with declarations included only when requested by the client.
+    pub fn references_for_fqn(&self, target_fqn: &str, include_declaration: bool) -> Vec<Location> {
         let mut refs = Vec::new();
         for document in self.get_documents() {
             for element in &document.elements {
-                if element.kind.fqn() == Some(target_fqn) {
+                if include_declaration && element.kind.fqn() == Some(target_fqn) {
                     refs.push(Location {
                         uri: document.uri.clone(),
                         range: element.meta.selection_range,

@@ -1,30 +1,31 @@
 use std::path::PathBuf;
 
-use async_lsp::lsp_types::{Location, Position, Range, Url};
+use async_lsp::lsp_types::{LocationLink, Position, Range, Url};
 
 use crate::{
-    model::{ElementKind, SpatialEntry},
+    model::{ElementKind, ModelElement},
     state::ProtoLanguageState,
 };
 
 impl ProtoLanguageState {
-    /// Resolves the target definition location(s) for the symbol under
-    /// `position`.
-    ///
-    /// The jump kind is inferred directly from the metamodel element at the
-    /// cursor: an `import` statement jumps to the imported file, while any
-    /// other symbol (or a type reference) is resolved to its declaration via
-    /// the shared cross-file name resolution engine.
-    pub fn definition(&self, uri: &Url, pos: Position, ipath: &[PathBuf]) -> Vec<Location> {
+    /// Resolves a complete type reference or declaration under the cursor,
+    /// retaining both the source span and the target's declaration/name spans.
+    pub fn definition(&self, uri: &Url, pos: Position, ipath: &[PathBuf]) -> Vec<LocationLink> {
         let Some(document) = self.get_document(uri) else {
             return vec![];
         };
-        let Some(SpatialEntry { element_id, .. }) = document.find_entry_at_position(pos) else {
+        let Some(entry) = document.find_entry_at_position(pos) else {
             return vec![];
         };
-        let Some(element) = document.elements.get(*element_id) else {
+        // LSP ranges have an exclusive end. Do not include an import's closing
+        // quote or whitespace immediately following a type/name.
+        if pos >= entry.range.end {
+            return vec![];
+        }
+        let Some(element) = document.elements.get(entry.element_id) else {
             return vec![];
         };
+        let origin = entry.range;
 
         if let ElementKind::Import { path } = &element.kind {
             let Some(p) = ipath.iter().map(|p| p.join(path)).find(|p| p.exists()) else {
@@ -33,16 +34,42 @@ impl ProtoLanguageState {
             let Ok(uri) = Url::from_file_path(p) else {
                 return vec![];
             };
-            return vec![Location {
-                uri,
-                range: Range::default(), // just start of the file
+            return vec![LocationLink {
+                origin_selection_range: Some(origin),
+                target_uri: uri,
+                target_range: Range::default(),
+                target_selection_range: Range::default(),
             }];
         }
 
-        let Some(fqn) = self.resolve_target_fqn(uri, pos) else {
-            return vec![];
-        };
-        self.declarations_for_fqn(&fqn)
+        if let Some(type_ref) = element.type_reference_at(pos) {
+            // Definition navigation follows the complete type. Rename keeps
+            // its segment-sensitive resolution (e.g. Outer in Outer.Inner).
+            let scope = element.kind.fqn().unwrap_or(&document.package);
+            return self
+                .resolve_reference(scope, &type_ref.name)
+                .into_iter()
+                .map(|target| definition_link(type_ref.range, target.uri, &target.element))
+                .collect();
+        }
+
+        if let Some(fqn) = element.kind.fqn() {
+            self.lookup_fqn(fqn)
+                .into_iter()
+                .map(|target| definition_link(origin, target.uri, &target.element))
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+}
+
+fn definition_link(origin: Range, uri: Url, element: &ModelElement) -> LocationLink {
+    LocationLink {
+        origin_selection_range: Some(origin),
+        target_uri: uri,
+        target_range: element.meta.range,
+        target_selection_range: element.meta.selection_range,
     }
 }
 
@@ -165,7 +192,7 @@ mod test {
             },
             &ipath,
         );
-        assert_yaml_snapshot!(loc, {"[0].uri" => insta::dynamic_redaction(|c, _| {
+        assert_yaml_snapshot!(loc, {"[0].targetUri" => insta::dynamic_redaction(|c, _| {
             assert!(c.as_str().unwrap().ends_with("c.proto"));
             "file://<redacted>/c.proto".to_string()
         })});

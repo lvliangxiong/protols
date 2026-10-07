@@ -374,12 +374,12 @@ mod test {
             &ipath,
         );
 
-        assert_yaml_snapshot!(state.references_for_fqn("com.workspace.Author"));
-        assert_yaml_snapshot!(state.references_for_fqn("com.workspace.Author.Address"));
-        assert_yaml_snapshot!(state.references_for_fqn("com.utility.Foobar.Baz"));
+        assert_yaml_snapshot!(state.references_for_fqn("com.workspace.Author", true));
+        assert_yaml_snapshot!(state.references_for_fqn("com.workspace.Author.Address", true));
+        assert_yaml_snapshot!(state.references_for_fqn("com.utility.Foobar.Baz", true));
         assert!(
             state
-                .references_for_fqn("com.nonexistent.Missing")
+                .references_for_fqn("com.nonexistent.Missing", true)
                 .is_empty()
         );
     }

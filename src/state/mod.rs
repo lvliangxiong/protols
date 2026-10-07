@@ -1,5 +1,7 @@
 mod definition;
 mod hover;
+#[cfg(test)]
+mod navigation_tests;
 mod rename;
 mod resolve;
 mod workspace_symbol;
